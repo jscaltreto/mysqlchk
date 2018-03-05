@@ -6,6 +6,8 @@ import "fmt"
 import "flag"
 import "database/sql"
 import _ "github.com/go-sql-driver/mysql"
+import "time"
+import "github.com/geekypanda/httpcache"
 import "net/http"
 
 var db *sql.DB
@@ -24,6 +26,7 @@ var forceFailFile = flag.String("failfile", "/dev/shm/proxyoff", "Create this fi
 var forceUpFile = flag.String("upfile", "/dev/shm/proxyon", "Create this file to manually pass checks")
 var bindPort = flag.Int("bindport", 9200, "MySQLChk bind port")
 var bindAddr = flag.String("bindaddr", "", "MySQLChk bind address")
+var cacheTTL = flag.Int("cachettl", 5, "Time to cache responses")
 
 func init() {
 	flag.Parse()
@@ -97,6 +100,6 @@ func main() {
 	}
 
 	log.Println("Listening...")
-	http.HandleFunc("/", checkHandler)
+	http.HandleFunc("/", httpcache.CacheFunc(checkHandler, time.Duration(*cacheTTL)*time.Second))
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *bindAddr, *bindPort), nil))
 }

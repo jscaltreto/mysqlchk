@@ -87,7 +87,7 @@ func main() {
 		panic(err.Error())
 	}
 
-	db.SetMaxIdleConns(10)
+	db.SetMaxIdleConns(0)
 
 	readOnlyStmt, err = db.Prepare("show global variables like 'read_only'")
 	if err != nil {

@@ -1,29 +1,37 @@
 package main
 
-import "os"
-import "log"
-import "fmt"
-import "flag"
-import "database/sql"
-import _ "github.com/go-sql-driver/mysql"
-import "net/http"
+import (
+	"database/sql"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	"net/http"
+
+	"github.com/go-sql-driver/mysql"
+)
 
 var db *sql.DB
 var wsrepStmt *sql.Stmt
 var readOnlyStmt *sql.Stmt
+
+var defaultTimeout = time.Duration(10) * time.Second
 
 var username = flag.String("username", "clustercheckuser", "MySQL Username")
 var password = flag.String("password", "clustercheckpassword!", "MySQL Password")
 var socket = flag.String("socket", "", "MySQL UNIX Socket")
 var host = flag.String("host", "localhost", "MySQL Server")
 var port = flag.Int("port", 3306, "MySQL Port")
-var timeout = flag.String("timeout", "10s", "MySQL connection timeout")
+var timeout = flag.Duration("timeout", defaultTimeout, "MySQL connection timeout")
 var availableWhenDonor = flag.Bool("donor", false, "Cluster available while node is a donor")
 var availableWhenReadonly = flag.Bool("readonly", false, "Cluster available while node is read only")
 var forceFailFile = flag.String("failfile", "/dev/shm/proxyoff", "Create this file to manually fail checks")
 var forceUpFile = flag.String("upfile", "/dev/shm/proxyon", "Create this file to manually pass checks")
 var bindPort = flag.Int("bindport", 9200, "MySQLChk bind port")
 var bindAddr = flag.String("bindaddr", "", "MySQLChk bind address")
+var allowCleartextPasswords = flag.Bool("cleartext", true, "Allow cleartext passwords")
 
 func init() {
 	flag.Parse()
@@ -74,10 +82,25 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	flag.Parse()
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?timeout=%s", *username, *password, *host, *port, *timeout)
+	var net string
+	var addr string
 	if *socket != "" {
-		dsn = fmt.Sprintf("%s:%s@unix(%s)/?timeout=%s", *username, *password, *socket, *timeout)
+		net = "unix"
+		addr = *socket
+	} else {
+		net = "tcp"
+		addr = fmt.Sprintf("%s:%d", *host, *port)
 	}
+
+	cfg := mysql.Config{
+		User:                    *username,
+		Passwd:                  *password,
+		Net:                     net,
+		Addr:                    addr,
+		Timeout:                 *timeout,
+		AllowCleartextPasswords: *allowCleartextPasswords,
+	}
+	dsn := cfg.FormatDSN()
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {

@@ -99,6 +99,7 @@ func main() {
 		Addr:                    addr,
 		Timeout:                 *timeout,
 		AllowCleartextPasswords: *allowCleartextPasswords,
+		AllowNativePasswords:    true,
 	}
 	dsn := cfg.FormatDSN()
 

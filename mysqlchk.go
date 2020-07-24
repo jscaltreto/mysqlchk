@@ -13,9 +13,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-var db *sql.DB
-var wsrepStmt *sql.Stmt
-var readOnlyStmt *sql.Stmt
+var mysqlConfig *mysql.Config
 
 var defaultTimeout = time.Duration(10) * time.Second
 
@@ -51,7 +49,24 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := wsrepStmt.QueryRow().Scan(&fieldName, &wsrepState)
+	db, err := sql.Open("mysql", mysqlConfig.FormatDSN())
+	if err != nil {
+		panic(err.Error())
+	}
+
+	readOnlyStmt, err := db.Prepare("show global variables like 'read_only'")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db.SetMaxOpenConns(1)
+
+	wsrepStmt, err := db.Prepare("show global status like 'wsrep_local_state'")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = wsrepStmt.QueryRow().Scan(&fieldName, &wsrepState)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,6 +91,8 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	db.Close()
+
 	fmt.Fprint(w, "Cluster node OK\n")
 }
 
@@ -92,7 +109,7 @@ func main() {
 		addr = fmt.Sprintf("%s:%d", *host, *port)
 	}
 
-	cfg := mysql.Config{
+	mysqlConfig = &mysql.Config{
 		User:                    *username,
 		Passwd:                  *password,
 		Net:                     net,
@@ -100,24 +117,6 @@ func main() {
 		Timeout:                 *timeout,
 		AllowCleartextPasswords: *allowCleartextPasswords,
 		AllowNativePasswords:    true,
-	}
-	dsn := cfg.FormatDSN()
-
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	db.SetMaxIdleConns(10)
-
-	readOnlyStmt, err = db.Prepare("show global variables like 'read_only'")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	wsrepStmt, err = db.Prepare("show global status like 'wsrep_local_state'")
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	log.Println("Listening...")

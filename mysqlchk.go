@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -15,7 +16,9 @@ import (
 
 var mysqlConfig *mysql.Config
 
-var defaultTimeout = time.Duration(10) * time.Second
+var db *sql.DB
+
+var defaultTimeout = 10 * time.Second
 
 var username = flag.String("username", "clustercheckuser", "MySQL Username")
 var password = flag.String("password", "clustercheckpassword!", "MySQL Password")
@@ -49,14 +52,14 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := sql.Open("mysql", mysqlConfig.FormatDSN())
-	if err != nil {
-		panic(err.Error())
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		http.Error(w, fmt.Sprintf("unable to connect to database: %v", err), http.StatusInternalServerError)
 	}
 
-	db.SetMaxOpenConns(1)
-
-	err = db.QueryRow("show global status like 'wsrep_local_state'").Scan(&fieldName, &wsrepState)
+	err := db.QueryRowContext(ctx, "show global status like 'wsrep_local_state'").Scan(&fieldName, &wsrepState)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -71,7 +74,7 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if *availableWhenReadonly == false {
-		err = db.QueryRow("show global status like 'read_only'").Scan(&fieldName, &readOnly)
+		err = db.QueryRowContext(ctx, "show global status like 'read_only'").Scan(&fieldName, &readOnly)
 		if err != nil {
 			http.Error(w, "Unable to determine read only setting", http.StatusInternalServerError)
 			return
@@ -80,8 +83,6 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	db.Close()
 
 	fmt.Fprint(w, "Cluster node OK\n")
 }
@@ -108,6 +109,12 @@ func main() {
 		AllowCleartextPasswords: *allowCleartextPasswords,
 		AllowNativePasswords:    true,
 	}
+	db, err := sql.Open("mysql", mysqlConfig.FormatDSN())
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
 
 	log.Println("Listening...")
 	http.HandleFunc("/", checkHandler)

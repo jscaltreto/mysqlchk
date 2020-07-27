@@ -54,19 +54,9 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err.Error())
 	}
 
-	readOnlyStmt, err := db.Prepare("show global variables like 'read_only'")
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	db.SetMaxOpenConns(1)
 
-	wsrepStmt, err := db.Prepare("show global status like 'wsrep_local_state'")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = wsrepStmt.QueryRow().Scan(&fieldName, &wsrepState)
+	err = db.QueryRow("show global status like 'wsrep_local_state'").Scan(&fieldName, &wsrepState)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -81,7 +71,7 @@ func checkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if *availableWhenReadonly == false {
-		err = readOnlyStmt.QueryRow().Scan(&fieldName, &readOnly)
+		err = db.QueryRow("show global status like 'read_only'").Scan(&fieldName, &readOnly)
 		if err != nil {
 			http.Error(w, "Unable to determine read only setting", http.StatusInternalServerError)
 			return
